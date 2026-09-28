@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#07090c">
+<title>Tello Pilot</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  #video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+  /* ---------- empty state ---------- */
+  #novideo {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; pointer-events: none;
+    background: radial-gradient(ellipse at center, #121a24 0%, #07090c 70%);
+  }
+  #novideo .card { max-width: 440px; text-align: center; }
+  #novideo h1 { font-size: 22px; font-weight: 600; margin: 14px 0 6px; }
+  #novideo p { color: var(--dim); }
+  #novideo ol { text-align: left; color: var(--dim); margin: 14px auto 0; padding-left: 20px; max-width: 360px; }
+  #novideo li { margin: 4px 0; }
+  #novideo b { color: var(--text); font-weight: 600; }
+  .spinner { width: 42px; height: 42px; margin: auto; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- top HUD ---------- */
+  #top {
+    position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: flex-start;
+    padding: 10px 12px; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,.55), transparent);
+  }
+  #stats { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+  #badge-practice { background: rgba(62, 230, 196, .16); border-color: rgba(62, 230, 196, .5); color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: .08em; }
+  #tools { display: flex; gap: 6px; pointer-events: auto; }
+  #btn-rec.on { color: var(--bad); border-color: var(--bad); }
+  #rec-time { display: none; }
+  #rec-time.on { display: flex; color: var(--bad); }
+
+  /* ---------- attitude indicator ---------- */
+  #attitude { position: fixed; left: 50%; top: 50%; width: 260px; height: 160px; margin: -80px 0 0 -130px; pointer-events: none; opacity: .85; }
+  #attitude svg { width: 100%; height: 100%; overflow: visible; }
+  #heading { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); pointer-events: none; }
+
+  /* ---------- stick monitor ---------- */
+  #monitor { position: fixed; left: 12px; top: 96px; width: 170px; padding: 9px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); pointer-events: none; }
+  #monitor .row { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 6px; height: 17px; font-size: 11px; color: var(--dim); }
+  #monitor .bar { position: relative; height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); }
+  #monitor .bar::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(255,255,255,.35); }
+  #monitor .bar i { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
+  #src { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  #src b { color: var(--accent); font-weight: 600; }
+
+  /* ---------- bottom action bar ---------- */
+  #actions { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 5; }
+  #main-btns { display: flex; gap: 8px; }
+  .act { height: 52px; min-width: 104px; padding: 0 18px; border-radius: 13px; font-weight: 600; font-size: 15px; letter-spacing: .02em; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+  .act small { display: block; font-size: 10px; font-weight: 500; color: var(--dim); letter-spacing: .08em; }
+  .act:active { transform: scale(.97); }
+  #btn-takeoff { border-color: rgba(70, 217, 123, .6); }
+  #btn-takeoff:hover { background: rgba(70, 217, 123, .18); }
+  #btn-land { border-color: rgba(255, 176, 32, .6); }
+  #btn-land:hover { background: rgba(255, 176, 32, .18); }
+  #btn-emg { border-color: var(--bad); color: #ffd4d8; min-width: 120px; }
+  #btn-emg.armed { background: var(--bad); color: #fff; animation: pulse .5s ease-in-out infinite alternate; }
+  @keyframes pulse { to { box-shadow: 0 0 24px var(--bad); } }
+  #flips { display: flex; gap: 6px; align-items: center; color: var(--dim); font-size: 11px; letter-spacing: .08em; }
+  #flips button { width: 34px; height: 30px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 15px; }
+
+  @media (max-width: 760px) {
+    #monitor, #attitude, #heading { display: none; }
+    .act { min-width: 82px; height: 46px; padding: 0 12px; font-size: 14px; }
+    #btn-emg { min-width: 92px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="video" width="960" height="720"></canvas>
+
+<div id="novideo">
+  <div class="card">
+    <div class="spinner"></div>
+    <h1 id="nv-title">Starting…</h1>
+    <p id="nv-text"></p>
+    <ol id="nv-steps" hidden>
+      <li>Turn on the Tello (side button). Wait for the <b>blinking yellow</b> light.</li>
+      <li>Connect this laptop's Wi-Fi to <b>TELLO-XXXXXX</b>.</li>
+      <li>Keep this page open. It connects on its own.</li>
+    </ol>
+  </div>
+</div>
+
+<div id="attitude">
+  <svg viewBox="-130 -80 260 160">
+    <g id="horizon">
+      <line x1="-120" y1="0" x2="-30" y2="0" stroke="#fff" stroke-width="2" opacity=".8"/>
+      <line x1="30" y1="0" x2="120" y2="0" stroke="#fff" stroke-width="2" opacity=".8"/>
+    </g>
+    <path d="M-22 0 H-8 L0 8 L8 0 H22" fill="none" stroke="#3ee6c4" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle r="2" fill="#3ee6c4"/>
+  </svg>
+</div>
+<div id="heading" class="pill num"><small>HDG</small><strong id="hdg">---</strong></div>
+
+<div id="top">
+  <div id="stats">
+    <div class="pill" id="p-conn"><span class="dot" id="conn-dot"></span><strong id="conn-text">Bridge offline</strong></div>
+    <div class="pill num" id="p-bat"><span class="batt"><i id="bat-fill"></i></span><strong id="bat">--%</strong></div>
+    <div class="pill num"><small>Alt</small><strong id="alt">--</strong></div>
+    <div class="pill num"><small>Spd</small><strong id="spd">--</strong></div>
+    <div class="pill num hide-sm"><small>ToF</small><strong id="tof">--</strong></div>
+    <div class="pill num hide-sm"><small>Temp</small><strong id="temp">--</strong></div>
+    <div class="pill num hide-sm"><small>Flight</small><strong id="ftime">--</strong></div>
+    <div class="pill" id="badge-practice" hidden>PRACTICE</div>
+    <div class="pill num" id="rec-time"><span class="dot"></span><strong id="rec-clock">0:00</strong></div>
+  </div>
+  <div id="tools">
+    <button class="icon" id="btn-photo" title="Photo (P)"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+    <button class="icon" id="btn-rec" title="Record video (R)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></button>
+    <button class="icon" id="btn-sticks" title="Show / hide touch sticks"><svg viewBox="0 0 24 24"><circle cx="7" cy="14" r="4"/><circle cx="17" cy="14" r="4"/><circle cx="7" cy="14" r="1" fill="currentColor"/><circle cx="17" cy="14" r="1" fill="currentColor"/></svg></button>
+    <button class="icon" id="btn-full" title="Fullscreen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button class="icon" id="btn-help" title="Controls & settings (H)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></button>
+  </div>
+</div>
+
+<div id="monitor">
+  <div id="src">Input: <b id="src-name">none</b></div>
+  <div class="row"><span>Roll</span><div class="bar"><i id="m0"></i></div></div>
+  <div class="row"><span>Pitch</span><div class="bar"><i id="m1"></i></div></div>
+  <div class="row"><span>Throttle</span><div class="bar"><i id="m2"></i></div></div>
+  <div class="row"><span>Yaw</span><div class="bar"><i id="m3"></i></div></div>
+</div>
+
+<div id="log"></div>
+
+<div class="zone" id="zoneL"><div class="base"><div class="knob"></div></div><div class="zlabel">UP/DOWN · TURN</div></div>
+<div class="zone" id="zoneR"><div class="base"><div class="knob"></div></div><div class="zlabel">MOVE</div></div>
+
+<div id="actions">
+  <div id="flips" class="hide-sm">FLIP
+    <button data-flip="l" title="Flip left (3)">←</button>
+    <button data-flip="f" title="Flip forward (1)">↑</button>
+    <button data-flip="b" title="Flip back (2)">↓</button>
+    <button data-flip="r" title="Flip right (4)">→</button>
+  </div>
+  <div id="main-btns">
+    <button class="act" id="btn-takeoff">Take off<small>T</small></button>
+    <button class="act" id="btn-land">Land<small>L</small></button>
+    <button class="act" id="btn-emg">Emergency<small>ESC ×2</small></button>
+  </div>
+</div>
+
+<div id="panel" class="overlay">
+  <div class="sheet">
+    <div class="head"><h2>Controls &amp; settings</h2><button class="icon" id="btn-close" title="Close (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+
+    <div class="cols">
+      <div>
+        <h3>Keyboard</h3>
+        <div class="map">
+          <span><kbd>W</kbd> <kbd>S</kbd></span><span>Forward / back</span>
+          <span><kbd>A</kbd> <kbd>D</kbd></span><span>Slide left / right</span>
+          <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Up / down</span>
+          <span><kbd>←</kbd> <kbd>→</kbd> <kbd>Q</kbd> <kbd>E</kbd></span><span>Turn left / right</span>
+          <span><kbd>Shift</kbd></span><span>Hold for full speed</span>
+          <span><kbd>T</kbd> / <kbd>L</kbd></span><span>Take off / land</span>
+          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></span><span>Flip fwd / back / left / right</span>
+          <span><kbd>P</kbd> / <kbd>R</kbd></span><span>Photo / record</span>
+          <span><kbd>Esc</kbd> <kbd>Esc</kbd></span><span><b style="color:var(--bad)">Emergency motor stop</b></span>
+        </div>
+      </div>
+      <div>
+        <h3>Gamepad (Xbox / PlayStation)</h3>
+        <div class="map">
+          <span>Left stick</span><span id="pad-left">Up-down + turn</span>
+          <span>Right stick</span><span id="pad-right">Move</span>
+          <span><kbd>A</kbd> / <kbd>B</kbd></span><span>Take off / land</span>
+          <span><kbd>X</kbd> / <kbd>Y</kbd></span><span>Photo / record</span>
+          <span><kbd>RT</kbd></span><span>Hold for full speed</span>
+          <span><kbd>RB</kbd> + D-pad</span><span>Flip</span>
+          <span><kbd>Back</kbd> + <kbd>Start</kbd></span><span><b style="color:var(--bad)">Emergency motor stop</b></span>
+        </div>
+        <h3>Touch screen</h3>
+        <p class="note">Put a thumb anywhere in the lower-left or lower-right area. A stick appears under it. <b>Left:</b> up/down and turn. <b>Right:</b> move. Let go and the drone hovers.</p>
+      </div>
+    </div>
+
+    <h3>Settings</h3>
+    <div class="set"><label for="s-speed">Normal speed</label><input type="range" id="s-speed" min="15" max="100" step="5"><span class="num" id="s-speed-v"></span></div>
+    <div class="set"><label for="s-expo">Stick smoothing (expo)</label><input type="range" id="s-expo" min="0" max="0.8" step="0.05"><span class="num" id="s-expo-v"></span></div>
+    <div class="set"><span>Gamepad layout</span><span class="seg" id="s-mode"><button data-v="2">Mode 2</button><button data-v="1">Mode 1</button></span><span></span></div>
+    <div class="set"><span>Touch sticks</span><span class="seg" id="s-sticks"><button data-v="auto">Auto</button><button data-v="on">On</button><button data-v="off">Off</button></span><span></span></div>
+
+    <h3>Safety</h3>
+    <p class="note">Let go of all controls and the drone <b>hovers in place</b>. It also hovers if this page closes or loses connection, and it lands if the connection is gone for 15 seconds. <b>Emergency stops the motors at once and the drone drops.</b> Use it only if it hits something. Flips need at least 50% battery. Fly indoors or with no wind. The Tello uses its downward camera to hold position, so it needs good light and a textured floor.</p>
+  </div>
+</div>
+
+<script type="module">
+  import { createControls, loadSettings, toast, bindRange, bindSeg } from '/static/controls.js';
+
+  const $ = s => document.querySelector(s);
+  const canvas = $('#video'), g = canvas.getContext('2d');
+  const settings = loadSettings({ speed: 50, expo: 0.3, padMode: 2, sticks: 'auto' });
+
+  // ---------------- connection ----------------
+  let ws = null, bridgeUp = false, status = { connected: false, telemetry: {} };
+  let lastFrameAt = 0, pendingBlob = null, drawing = false;
+
+  function connect() {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.binaryType = 'blob';
+    ws.onopen = () => { bridgeUp = true; };
+    ws.onclose = () => { bridgeUp = false; status = { connected: false, telemetry: {} }; setTimeout(connect, 1000); };
+    ws.onmessage = e => {
+      if (typeof e.data !== 'string') { pendingBlob = e.data; if (!drawing) drawFrames(); return; }
+      const m = JSON.parse(e.data);
+      if (m.t === 'status') status = m;
+      else if (m.t === 'log') toast(m.m, /error|lost|blocked|unknown/i.test(m.m) ? 'bad' : /connected|: ok/i.test(m.m) ? 'good' : '');
+    };
+  }
+
+  async function drawFrames() {
+    drawing = true;
+    while (pendingBlob) {
+      const blob = pendingBlob; pendingBlob = null;
+      try {
+        const bmp = await createImageBitmap(blob);
+        if (canvas.width !== bmp.width || canvas.height !== bmp.height) { canvas.width = bmp.width; canvas.height = bmp.height; }
+        g.drawImage(bmp, 0, 0);
+        bmp.close();
+        lastFrameAt = performance.now();
+      } catch (e) {}
+    }
+    drawing = false;
+  }
+
+  const send = obj => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+  function cmd(c) {
+    if (!bridgeUp) return toast('Bridge is not running. Start start.bat', 'bad');
+    if (!status.connected) return toast('Drone not connected yet', 'bad');
+    send({ t: 'cmd', c });
+    toast('→ ' + c);
+  }
+
+  // ---------------- actions ----------------
+  const takeoff = () => cmd('takeoff');
+  const land = () => cmd('land');
+  const flip = d => cmd('flip ' + d);
+  let emgArmedUntil = 0;
+  function emergency() { send({ t: 'cmd', c: 'emergency' }); toast('EMERGENCY STOP sent', 'bad'); disarm(); }
+  function armEmergency() {
+    if (performance.now() < emgArmedUntil) return emergency();
+    emgArmedUntil = performance.now() + 1200;
+    $('#btn-emg').classList.add('armed');
+    $('#btn-emg').firstChild.textContent = 'Press again!';
+    setTimeout(disarm, 1200);
+  }
+  function disarm() { emgArmedUntil = 0; $('#btn-emg').classList.remove('armed'); $('#btn-emg').firstChild.textContent = 'Emergency'; }
+
+  const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  const hasVideo = () => performance.now() - lastFrameAt < 1500;
+  function photo() {
+    if (!hasVideo()) return toast('No video to capture', 'bad');
+    canvas.toBlob(b => { download(b, `tello_${stamp()}.jpg`); toast('Photo saved to Downloads', 'good'); }, 'image/jpeg', 0.95);
+  }
+  let rec = null, recStart = 0;
+  function toggleRec() {
+    if (rec) { rec.stop(); return; }
+    if (!hasVideo()) return toast('No video to record', 'bad');
+    const type = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+    const chunks = [];
+    rec = new MediaRecorder(canvas.captureStream(30), { mimeType: type, videoBitsPerSecond: 6e6 });
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      download(new Blob(chunks, { type: 'video/webm' }), `tello_${stamp()}.webm`);
+      toast('Video saved to Downloads', 'good');
+      rec = null; $('#btn-rec').classList.remove('on'); $('#rec-time').classList.remove('on');
+    };
+    rec.start(1000); recStart = performance.now();
+    $('#btn-rec').classList.add('on'); $('#rec-time').classList.add('on');
+  }
+  function toggleFull() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
+
+  // ---------------- input ----------------
+  let lastEsc = 0;
+  const panelOpen = () => $('#panel').classList.contains('open');
+  function onKey(e) {
+    if (e.repeat) return; // holding Esc must not count as a double press
+    if (e.code === 'Escape') {
+      if (panelOpen()) { closePanel(); lastEsc = 0; return; }
+      const now = performance.now();
+      if (now - lastEsc < 800) { emergency(); lastEsc = 0; }
+      else { lastEsc = now; armEmergency(); }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const actions = {
+      KeyT: takeoff, KeyL: land, KeyP: photo, KeyR: toggleRec, KeyF: toggleFull,
+      KeyH: togglePanel, Slash: togglePanel,
+      Digit1: () => flip('f'), Digit2: () => flip('b'), Digit3: () => flip('l'), Digit4: () => flip('r'),
+    };
+    if (actions[e.code]) actions[e.code]();
+  }
+  function onPad(pressed, edge) {
+    if (pressed(8) && pressed(9) && (edge[8] || edge[9])) return emergency();
+    if (edge[0]) takeoff();
+    if (edge[1]) land();
+    if (edge[2]) photo();
+    if (edge[3]) toggleRec();
+    if (pressed(5)) { if (edge[12]) flip('f'); if (edge[13]) flip('b'); if (edge[14]) flip('l'); if (edge[15]) flip('r'); }
+  }
+  const controls = createControls({ settings, zoneLeft: $('#zoneL'), zoneRight: $('#zoneR'), onKey, onPad });
+  addEventListener('gamepadconnected', e => toast('Gamepad connected: ' + e.gamepad.id.split('(')[0].trim(), 'good'));
+  addEventListener('gamepaddisconnected', () => toast('Gamepad disconnected', 'bad'));
+
+  // main control loop (20 Hz)
+  const bars = [0, 1, 2, 3].map(i => $('#m' + i));
+  setInterval(() => {
+    const { rc, active, padName } = controls.read();
+    if (!document.hidden) send({ t: 'rc', v: rc });
+    rc.forEach((x, i) => {
+      const b = bars[i], w = Math.abs(x) / 2;
+      b.style.width = w + '%';
+      b.style.left = (x < 0 ? 50 - w : 50) + '%';
+    });
+    $('#src-name').textContent = active.length ? active.join(' + ') : (padName ? 'Gamepad ready' : 'none');
+  }, 50);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) send({ t: 'rc', v: [0, 0, 0, 0] }); });
+
+  // ---------------- HUD refresh ----------------
+  const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  setInterval(() => {
+    const t = status.telemetry || {}, has = k => typeof t[k] === 'number';
+    const conn = bridgeUp && status.connected;
+    $('#conn-dot').className = 'dot' + (conn ? (status.state ? ' ok' : ' mid') : '');
+    $('#conn-text').textContent = !bridgeUp ? 'Bridge offline' : conn ? (status.practice ? 'Simulator' : 'Tello connected') : 'Searching for drone…';
+    $('#badge-practice').hidden = !status.practice;
+
+    const bat = has('bat') && conn ? t.bat : null;
+    $('#bat').textContent = bat === null ? '--%' : bat + '%';
+    const fill = $('#bat-fill');
+    fill.style.width = (bat || 0) + '%';
+    fill.style.background = bat === null ? 'var(--dim)' : bat < 20 ? 'var(--bad)' : bat < 40 ? 'var(--warn)' : 'var(--good)';
+    $('#p-bat').classList.toggle('low', bat !== null && bat < 15);
+
+    const show = conn && status.state;
+    $('#alt').textContent = show && has('h') ? (t.h / 100).toFixed(1) + ' m' : '--';
+    $('#spd').textContent = show && has('vgx') ? (Math.hypot(t.vgx, t.vgy, t.vgz) / 10).toFixed(1) + ' m/s' : '--';
+    $('#tof').textContent = show && has('tof') ? (t.tof >= 6000 ? '--' : (t.tof / 100).toFixed(2) + ' m') : '--';
+    $('#temp').textContent = show && has('templ') ? Math.round((t.templ + t.temph) / 2) + '°C' : '--';
+    $('#ftime').textContent = show && has('time') ? fmtTime(t.time) : '--';
+    const hdg = show && has('yaw') ? (Math.round(t.yaw) + 360) % 360 : null;
+    $('#hdg').textContent = hdg === null ? '---' : String(hdg).padStart(3, '0') + '° ' + ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(hdg / 45) % 8];
+    $('#horizon').setAttribute('transform', show ? `rotate(${-(t.roll || 0)}) translate(0 ${-(t.pitch || 0) * 2.5})` : '');
+
+    if (rec) $('#rec-clock').textContent = fmtTime((performance.now() - recStart) / 1000);
+
+    const video = hasVideo();
+    $('#novideo').style.display = video ? 'none' : 'grid';
+    $('#attitude').style.opacity = video ? .85 : .25;
+    if (!video) {
+      const [title, text, steps] =
+        !bridgeUp ? ['Bridge not running', 'Double-click start.bat (or run python tello_bridge.py), then reload this page.', false]
+        : !status.connected ? ['Looking for your Tello…', 'Already on TELLO Wi-Fi and still stuck here? Windows Firewall is probably blocking Python. See README.', true]
+        : !status.state && !status.video ? ['Connected, waiting for data…', 'The drone answers but no telemetry or video arrives. Windows Firewall is probably blocking it: allow Python on Public networks (see README).', false]
+        : ['Waiting for video…', 'The video usually starts within a few seconds. You can still fly with the HUD.', false];
+      $('#nv-title').textContent = title;
+      $('#nv-text').textContent = text;
+      $('#nv-steps').hidden = !steps;
+    }
+  }, 200);
+
+  // ---------------- panel ----------------
+  function togglePanel() { panelOpen() ? closePanel() : $('#panel').classList.add('open'); }
+  function closePanel() { $('#panel').classList.remove('open'); }
+  $('#panel').addEventListener('pointerdown', e => { if (e.target.id === 'panel') closePanel(); });
+  $('#btn-close').onclick = closePanel;
+  $('#btn-help').onclick = togglePanel;
+
+  function refreshSettings() {
+    $('#pad-left').textContent = settings.padMode == 1 ? 'Forward-back + turn' : 'Up-down + turn';
+    $('#pad-right').textContent = settings.padMode == 1 ? 'Up-down + slide' : 'Move';
+    controls.setSticks(settings.sticks);
+  }
+  bindRange($('#s-speed'), settings, 'speed', v => v + '%');
+  bindRange($('#s-expo'), settings, 'expo', v => (+v).toFixed(2));
+  bindSeg($('#s-mode'), settings, 'padMode', refreshSettings);
+  const paintSticks = bindSeg($('#s-sticks'), settings, 'sticks', refreshSettings);
+  refreshSettings();
+  $('#btn-sticks').onclick = () => {
+    settings.sticks = document.body.classList.contains('sticks') ? 'off' : 'on';
+    settings.save(); paintSticks(); refreshSettings();
+  };
+
+  // ---------------- buttons ----------------
+  const tap = (el, fn) => el.addEventListener('click', () => { fn(); el.blur(); });
+  tap($('#btn-takeoff'), takeoff);
+  tap($('#btn-land'), land);
+  tap($('#btn-emg'), armEmergency);
+  tap($('#btn-photo'), photo);
+  tap($('#btn-rec'), toggleRec);
+  tap($('#btn-full'), toggleFull);
+  document.querySelectorAll('[data-flip]').forEach(b => tap(b, () => flip(b.dataset.flip)));
+
+  connect();
+</script>
+</body>
+</html>

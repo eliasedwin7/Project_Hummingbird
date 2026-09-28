@@ -1,0 +1,50 @@
+{
+ "order": 0,
+ "name": "Free Flight",
+ "timed": false,
+ "description": "No timer, no pressure. Learn the controls, fly around gates and pillars.",
+ "start": {
+  "x": 0,
+  "y": 0,
+  "yaw": 0
+ },
+ "gates": [
+  {
+   "x": 0,
+   "y": 5,
+   "heading": 0
+  },
+  {
+   "x": 5,
+   "y": 9,
+   "heading": 90,
+   "z": 1.0
+  },
+  {
+   "x": -4,
+   "y": 10,
+   "heading": 270,
+   "z": 2.0
+  }
+ ],
+ "pillars": [
+  {
+   "x": 3,
+   "y": 3,
+   "radius": 0.25,
+   "height": 2.5
+  },
+  {
+   "x": -3,
+   "y": 4,
+   "radius": 0.4,
+   "height": 4
+  },
+  {
+   "x": 0,
+   "y": 14,
+   "radius": 0.6,
+   "height": 6
+  }
+ ]
+}

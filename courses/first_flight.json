@@ -1,0 +1,36 @@
+{
+ "order": 1,
+ "name": "First Flight",
+ "description": "Three wide gates in a straight line. Take off, fly forward, stay at gate height.",
+ "start": {
+  "x": 0,
+  "y": 0,
+  "yaw": 0
+ },
+ "gates": [
+  {
+   "x": 0,
+   "y": 4,
+   "heading": 0,
+   "z": 0.3,
+   "width": 1.8,
+   "height": 1.4
+  },
+  {
+   "x": 0,
+   "y": 9,
+   "heading": 0,
+   "z": 0.3,
+   "width": 1.8,
+   "height": 1.4
+  },
+  {
+   "x": 0,
+   "y": 14,
+   "heading": 0,
+   "z": 0.6,
+   "width": 1.8,
+   "height": 1.4
+  }
+ ]
+}
