@@ -104,3 +104,8 @@ With the bridge running on the laptop, a phone on the same Wi-Fi can open the ad
 - `static/controls.js`, `static/common.css`: input handling and styles shared by the controller and the game.
 - `courses/*.json`: race courses.
 - `tello_env.py`: the AI training environment (Gymnasium). `train_pilot.py`, `evaluate_pilot.py`: training and exam. `models/`: trained pilots and the training log (`pilot_log.csv`).
+
+## License and credits
+
+Released under the [MIT License](LICENSE), © 2026 eliasedwin7. You're free to use, change and share it, but the copyright notice must stay with every copy. If you build on Project Hummingbird, please credit it, e.g. "Based on Project Hummingbird by eliasedwin7". Third-party components are listed in [NOTICE.md](NOTICE.md).
+
